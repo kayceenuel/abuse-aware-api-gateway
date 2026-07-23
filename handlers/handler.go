@@ -1,4 +1,4 @@
-package main
+package handlers
 
 import "net/http"
 
@@ -22,4 +22,5 @@ func purchaseHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
+	defer r.Body.Close()
 }
