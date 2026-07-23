@@ -13,7 +13,9 @@ func main() {
 	http.HandleFunc("/search", searchHandler)
 	http.HandleFunc("/purchase", purchaseHandler)
 
+	// Wire up the proxy: connect the handlers to the proxy.
+
 	// set up the HTTP server
-	fmt.Println("Server is running on htt://localhost:2121")
+	fmt.Println("Server is running on http://localhost:2121")
 	log.Fatal(http.ListenAndServe(":2121", nil))
 }
