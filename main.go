@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+
+	"github.com/kayceenuel/abuse-aware-api-gateway/handlers"
 )
 
 func main() {
 
 	// handle the routes: /login, /search, /purchase
-	http.HandleFunc("/login", loginHandler)
-	http.HandleFunc("/search", searchHandler)
-	http.HandleFunc("/purchase", purchaseHandler)
+	http.HandleFunc("/login", handlers.LoginHandler)
+	http.HandleFunc("/search", handlers.SearchHandler)
+	http.HandleFunc("/purchase", handlers.PurchaseHandler)
 
 	// Wire up the proxy: connect the handlers to the proxy.
 
