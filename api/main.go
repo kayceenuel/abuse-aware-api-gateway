@@ -1,7 +1,9 @@
-package api
+package main // independent from the main.go file, this is a separate API server that handles the resp for the proxy.*/
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 )
 
@@ -21,7 +23,12 @@ type purchaseResponse struct {
 	Success bool   `json:"success"`
 }
 
+/* The Response handlers writes JSON Response to the proxy */
 func LoginResponse(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request", http.StatusMethodNotAllowed)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 
 	// handles the login resp and returns a JSON resp with a msg and token
@@ -54,4 +61,14 @@ func PurchaseResponse(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func main() {
+	http.HandleFunc("/login", LoginResponse)
+	http.HandleFunc("/search", SearchResponse)
+	http.HandleFunc("/purchase", PurchaseResponse)
+
+	// set up the HTTP server
+	fmt.Println("Server is running on http://localhost:8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
