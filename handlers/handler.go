@@ -2,18 +2,25 @@ package handlers
 
 import "net/http"
 
-func LoginHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost { // check if the request method is POST
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+func LoginHandler(proxy http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+			return
+		}
+		// Call the proxy to forward the request if the method is correct.
+		proxy.ServeHTTP(w, r)
 	}
-	defer r.Body.Close() // close the request body when the function returns
 }
 
-func SearchHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet { // check if the request method is GET
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		return
+func SearchHandler(proxy http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+			return
+		}
+		// Call the proxy to forward the request if the method is correct.
+		proxy.ServeHTTP(w, r)
 	}
 }
 
