@@ -6,16 +6,19 @@ import (
 	"net/http"
 
 	"github.com/kayceenuel/abuse-aware-api-gateway/handlers"
+	"github.com/kayceenuel/abuse-aware-api-gateway/proxy"
 )
 
 func main() {
+	proxyHandler, err := proxy.NewHandler("http://localhost:8080")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// handle the routes: /login, /search, /purchase
-	http.HandleFunc("/login", handlers.LoginHandler)
-	http.HandleFunc("/search", handlers.SearchHandler)
-	http.HandleFunc("/purchase", handlers.PurchaseHandler)
-
-	// Wire up the proxy: connect the handlers to the proxy.
+	http.Handle("/login", handlers.LoginHandler(proxyHandler))
+	http.Handle("/search", handlers.SearchHandler(proxyHandler))
+	http.Handle("/purchase", handlers.PurchaseHandler(proxyHandler))
 
 	// set up the HTTP server
 	fmt.Println("Server is running on http://localhost:2121")
