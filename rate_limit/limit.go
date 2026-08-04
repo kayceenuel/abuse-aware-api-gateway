@@ -58,5 +58,18 @@ func (rl *RateLimiter) AllowTokenBucket(apiKey string) (bool, error) {
 		rl.client.Set(ctx, lastRefillKey, time.Now().Unix(), 0)
 	}
 
-	
+	// check if there are enough tokens to allow the request
+	if tokens > 0 {
+		rl.client.Decr(ctx, tokensKey) // decrement token count
+		return true, nil
+	}
+	return false, nil // not enough tokens, request is denied
+}
+
+// min returns the smaller of two integers.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
