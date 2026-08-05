@@ -2,6 +2,7 @@ package rate_limit
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -13,13 +14,14 @@ type RateLimiter struct {
 	client *redis.Client
 
 	// token bucket config
-	bucketSize int
-	refillRate int
+	bucketSize int // maximum num of tokens in the bucket.
+	refillRate int // The number of tokens to add to the bucket per second.
 	// sliding window config
-	windowSize  time.Duration
+	windowSize  time.Duration // The duration of the sliding window
 	maxRequests int
 }
 
+// NewRateLimiter creates a new RateLimiter configured instance
 func NewRateLimiter(client *redis.Client, bucketSize int, refillRate int, windowSize time.Duration, maxRequests int) *RateLimiter {
 	return &RateLimiter{
 		client:      client,
@@ -50,6 +52,7 @@ func (rl *RateLimiter) AllowTokenBucket(apiKey string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// calculate how many tokens to refill based on the elapsed time and refill rate
 	elapsed := time.Now().Unix() - lastRefill
 	refilled := int(elapsed) * rl.refillRate
 	if refilled > 0 {
@@ -72,4 +75,38 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ALlowSlidingWindow checks if a request is allowed based on the sliding windows
+func (rl *RateLimiter) AllowSlidingWindow(apiKey string) (bool, error) {
+	now := time.Now().UnixMilli() // current time in miliseconds
+
+	// Use a Redis transaction (MULTI/EXEC) for atomicity
+	// This ensures that all operations are treated as a sinlge, atomic unit.
+	pipe := rl.client.TxPipeline()
+
+	// Remove timestamps older than the current window
+	// ZREMRANGEBYSCORE key - inf (now - windowSize)
+	pipe.ZRemRangeByScore(ctx, apiKey, "-inf", fmt.Sprintf("%d", now-rl.windowSize.Milliseconds()))
+
+	// Add the current timestamp to the sorted set
+	// ZADD key now now
+	pipe.ZAdd(ctx, apiKey, redis.Z{Score: float64(now), Member: now})
+
+	// Count the number of requests in the current window
+	// ZCARD key (now - windowSize, now)
+	// We count all requests in the current window, including the one we just added.
+	countCmd := pipe.ZCard(ctx, apiKey)
+
+	// Set TTL to avoid memory leaks for inactive API keys
+	pipe.Expire(ctx, apiKey, rl.windowSize*2) // Set TTL to twice the window size  to ensure that the key persists long enough for all requests in the current window to be counted.
+
+	// Excute transcation
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return false, err
+	}
+	//check if within limit
+	return countCmd.Val() <= int64(rl.maxRequests), nil
+
 }
