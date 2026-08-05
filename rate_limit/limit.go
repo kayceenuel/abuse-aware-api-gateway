@@ -78,8 +78,8 @@ func min(a, b int) int {
 }
 
 // ALlowSlidingWindow checks if a request is allowed based on the sliding windows
-func (rl *RateLimiter) AllowSlidingWindow(apiKey string) (bool, error) {
-	slidingKey := "sliding_window:" + apiKey
+func (rl *RateLimiter) AllowSlidingWindow(ip string) (bool, error) {
+	slidingKey := "sliding_window:" + ip
 	now := time.Now().UnixMilli() // current time in miliseconds
 
 	// Use a Redis transaction (MULTI/EXEC) for atomicity
