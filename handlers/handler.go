@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net"
 	"net/http"
 
 	"github.com/kayceenuel/abuse-aware-api-gateway/rate_limit"
@@ -22,7 +23,7 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter) http.HandlerFu
 			return
 		}
 		// extract client IP
-		ip := r.RemoteAddr
+		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 
 		// check token bucket - if not allowed, return, 429 Too Many Requests.
 		allowed, err := rl.AllowTokenBucket(apiKey)
@@ -62,8 +63,8 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter) http.HandlerF
 			http.Error(w, "Missing API key", http.StatusUnauthorized)
 			return
 		}
-		// extract client IP 
-		ip := r.RemoteAddr
+		// extract client IP
+		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 
 		// check token bucket - if not allowed, return, 429 Too Many Requests.
 		allowed, err := rl.AllowTokenBucket(apiKey)
@@ -105,7 +106,7 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter) http.Handle
 			return
 		}
 		// extract client IP
-		ip := r.RemoteAddr
+		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 
 		// check token bucket - if not allowed, return, 429 Too Many Requests.
 		allowed, err := rl.AllowTokenBucket(apiKey)
