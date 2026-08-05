@@ -79,6 +79,7 @@ func min(a, b int) int {
 
 // ALlowSlidingWindow checks if a request is allowed based on the sliding windows
 func (rl *RateLimiter) AllowSlidingWindow(apiKey string) (bool, error) {
+	slidingKey := "sliding_window:" + apiKey
 	now := time.Now().UnixMilli() // current time in miliseconds
 
 	// Use a Redis transaction (MULTI/EXEC) for atomicity
@@ -87,19 +88,19 @@ func (rl *RateLimiter) AllowSlidingWindow(apiKey string) (bool, error) {
 
 	// Remove timestamps older than the current window
 	// ZREMRANGEBYSCORE key - inf (now - windowSize)
-	pipe.ZRemRangeByScore(ctx, apiKey, "-inf", fmt.Sprintf("%d", now-rl.windowSize.Milliseconds()))
+	pipe.ZRemRangeByScore(ctx, slidingKey, "-inf", fmt.Sprintf("%d", now-rl.windowSize.Milliseconds()))
 
 	// Add the current timestamp to the sorted set
 	// ZADD key now now
-	pipe.ZAdd(ctx, apiKey, redis.Z{Score: float64(now), Member: now})
+	pipe.ZAdd(ctx, slidingKey, redis.Z{Score: float64(now), Member: now})
 
 	// Count the number of requests in the current window
 	// ZCARD key (now - windowSize, now)
 	// We count all requests in the current window, including the one we just added.
-	countCmd := pipe.ZCard(ctx, apiKey)
+	countCmd := pipe.ZCard(ctx, slidingKey)
 
 	// Set TTL to avoid memory leaks for inactive API keys
-	pipe.Expire(ctx, apiKey, rl.windowSize*2) // Set TTL to twice the window size  to ensure that the key persists long enough for all requests in the current window to be counted.
+	pipe.Expire(ctx, slidingKey, rl.windowSize*2) // Set TTL to twice the window size  to ensure that the key persists long enough for all requests in the current window to be counted.
 
 	// Excute transcation
 	_, err := pipe.Exec(ctx)
