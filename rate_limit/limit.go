@@ -90,24 +90,24 @@ func (rl *RateLimiter) AllowSlidingWindow(ip string) (bool, error) {
 	// ZREMRANGEBYSCORE key - inf (now - windowSize)
 	pipe.ZRemRangeByScore(ctx, slidingKey, "-inf", fmt.Sprintf("%d", now-rl.windowSize.Milliseconds()))
 
-	// Add the current timestamp to the sorted set
-	// ZADD key now now
-	pipe.ZAdd(ctx, slidingKey, redis.Z{Score: float64(now), Member: now})
-
-	// Count the number of requests in the current window
-	// ZCARD key (now - windowSize, now)
-	// We count all requests in the current window, including the one we just added.
+	// Count BEFORE adding the new request
 	countCmd := pipe.ZCard(ctx, slidingKey)
 
-	// Set TTL to avoid memory leaks for inactive API keys
-	pipe.Expire(ctx, slidingKey, rl.windowSize*2) // Set TTL to twice the window size  to ensure that the key persists long enough for all requests in the current window to be counted.
-
-	// Excute transcation
+	// Execute to get the count
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return false, err
 	}
-	//check if within limit
-	return countCmd.Val() <= int64(rl.maxRequests), nil
+
+	// Check the limit before adding
+	if countCmd.Val() >= int64(rl.maxRequests) {
+		return false, nil
+	}
+
+	// Only add if allowed
+	rl.client.ZAdd(ctx, slidingKey, redis.Z{Score: float64(now), Member: now})
+	rl.client.Expire(ctx, slidingKey, rl.windowSize*2)
+
+	return true, nil
 
 }
