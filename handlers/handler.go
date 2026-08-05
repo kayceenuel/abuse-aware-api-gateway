@@ -55,6 +55,36 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter) http.HandlerF
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 			return
 		}
+		//Extract the API key from the request header. If the API key is missing, return 401 Unauthorized.
+		// The API key is used to identify the client and apply rate limiting.
+		apiKey := r.Header.Get("X-API-Key")
+		if apiKey == "" {
+			http.Error(w, "Missing API key", http.StatusUnauthorized)
+			return
+		}
+		// extract client IP 
+		ip := r.RemoteAddr
+
+		// check token bucket - if not allowed, return, 429 Too Many Requests.
+		allowed, err := rl.AllowTokenBucket(apiKey)
+		if err != nil {
+			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		// Check sliding_window - if not allowed, return 429 Too Many Requests.
+		allowed, err = rl.AllowSlidingWindow(ip)
+		if err != nil {
+			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
 		// Call the proxy to forward the request if the method is correct.
 		proxy.ServeHTTP(w, r)
 	}
@@ -67,6 +97,36 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter) http.Handle
 			return
 		}
 		defer r.Body.Close()
+		//Extract the API key from the request header. If the API key is missing, return 401 Unauthorized.
+		// The API key is used to identify the client and apply rate limiting.
+		apiKey := r.Header.Get("X-API-Key")
+		if apiKey == "" {
+			http.Error(w, "Missing API key", http.StatusUnauthorized)
+			return
+		}
+		// extract client IP
+		ip := r.RemoteAddr
+
+		// check token bucket - if not allowed, return, 429 Too Many Requests.
+		allowed, err := rl.AllowTokenBucket(apiKey)
+		if err != nil {
+			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		// Check sliding_window - if not allowed, return 429 Too Many Requests.
+		allowed, err = rl.AllowSlidingWindow(ip)
+		if err != nil {
+			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
 		// Call the proxy to forward the request if the method is correct.
 		proxy.ServeHTTP(w, r)
 	}
