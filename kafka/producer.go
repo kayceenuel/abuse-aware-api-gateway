@@ -17,6 +17,7 @@ type RequestEvent struct {
 	APIKey    string    `json:"api_key"`
 	Timestamp time.Time `json:"timestamp"`
 	Allowed   bool      `json:"allowed"`
+	Username  string    `json:"username"`
 }
 
 // NewProducer creates a Kafka writer connected to the given broker and topic.
