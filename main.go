@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kayceenuel/abuse-aware-api-gateway/handlers"
+	"github.com/kayceenuel/abuse-aware-api-gateway/kafka"
 	"github.com/kayceenuel/abuse-aware-api-gateway/proxy"
 	"github.com/kayceenuel/abuse-aware-api-gateway/rate_limit"
 	"github.com/redis/go-redis/v9"
@@ -28,7 +29,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
- 
+
+	scorer := kafka.NewRiskScorer(redisClient, 10, 50)
+
+	producer := kafka.NewProducer("localhost:9092", "gateway_events")
+	defer producer.Close()
+
+	// start consumer in background
+	go kafka.Start("localhost:9092", "gateway_events", scorer)
 	// handle the routes: /login, /search, /purchase
 	http.Handle("/login", handlers.LoginHandler(proxyHandler, rateLimiter))
 	http.Handle("/search", handlers.SearchHandler(proxyHandler, rateLimiter))
