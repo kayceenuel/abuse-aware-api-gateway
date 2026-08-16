@@ -10,7 +10,7 @@ import (
 
 // Start connects to Kafka and processes incoming request events in a loop.
 // It runs indefinitely and should be called in a separate goroutine.
-func Start(brokerAddress, topic string) {
+func Start(brokerAddress, topic string, scorer *RiskScorer) {
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: []string{brokerAddress},
 		GroupID: "gateway-consumers",
@@ -33,6 +33,8 @@ func Start(brokerAddress, topic string) {
 			continue
 		}
 
-		// TODO: pass event to risk scorer
+		if err := scorer.Score(event); err != nil {
+			log.Printf("consumer: risk scoring failed: %v", err)
+		}
 	}
 }
