@@ -55,17 +55,19 @@ topic and get processed when it restarts. Nothing is lost.
 
 ### Sliding window race condition
 
-The count check and timestamp write are not atomic. Two simultaneous requests from 
-the same IP could both pass the limit check before either is recorded. A Lua script 
-executed atomically in Redis would fix this in production.
+The limit check and the request recording happen in two separate steps. If two 
+requests arrive at the same time, both could pass the check before either is 
+recorded. A Lua script executed atomically in Redis would fix this in production.
 
 ### No protection against distributed botnets
 
 The gateway detects abuse from a single IP. A sophisticated attacker using a 
 botnet — thousands of IPs each sending one request — would pass all checks. 
-Detecting this would require cross-IP pattern analysis, which is outside the 
-current scope.
+Detecting this would require cross-IP pattern analysis, which this project doesn't cover.
 
 ### Detection lag
 
-By the time the risk scorer flags an IP, the request that triggered it has already gone through. The tighter limits only apply to the next request. This is a conscious tradeoff — catching abuse in real time would mean making every request wait for a risk score, which slows everything down.
+By the time the risk scorer flags an IP, the request that triggered it has already 
+gone through. The tighter limits only apply to the next request. This is a conscious 
+tradeoff — catching abuse in real time would mean making every request wait for a 
+risk score, which slows everything down.
