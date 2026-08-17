@@ -38,7 +38,34 @@ Every request, allowed or blocked, gets logged as an event to Kafka. A consumer 
 
 ## Running locally
 
-_Coming soon._
+**Prerequisites:** Go 1.21+, Docker, Redis
+
+1. **Start Redis**
+```bash
+   sudo service redis-server start
+```
+
+2. **Start Kafka and Zookeeper**
+```bash
+   docker compose up -d
+```
+
+3. **Start the fake product API** (runs on port 8080)
+```bash
+   go run api/main.go
+```
+
+4. **Start the gateway** (runs on port 2121)
+```bash
+   go run main.go
+```
+
+**Test it:**
+```bash
+curl -X POST http://localhost:2121/login -H "X-API-Key: your-key"
+curl -X GET http://localhost:2121/search -H "X-API-Key: your-key"
+curl -X POST http://localhost:2121/purchase -H "X-API-Key: your-key"
+```
 
 ---
 
