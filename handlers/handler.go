@@ -160,5 +160,5 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *k
 		// forward request to the product API via proxy
 		proxy.ServeHTTP(w, r)
 	}
-
+	
 }
