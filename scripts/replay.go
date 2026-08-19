@@ -27,7 +27,14 @@ func simulateCredentialStuffing(client *http.Client) {
 }
 
 func simulateScraping(client *http.Client) {
-
+	for i := 1; i <= 30; i++ {
+		url := "http://localhost:2121/search"
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			fmt.Printf("Error %v\n", err)
+			continue
+		}
+	}
 }
 
 func main() {
