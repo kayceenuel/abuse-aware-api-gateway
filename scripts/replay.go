@@ -41,7 +41,7 @@ func simulateScraping(client *http.Client) {
 			fmt.Printf("request failed:  %v\n", err)
 			return
 		}
-		fmt.Printf("[SCRAPING] request 1 → 200 OK")
+		fmt.Printf("[SCRAPING] request  %d → %s\n", i, res.Status)
 		res.Body.Close()
 	}
 }
