@@ -32,8 +32,17 @@ func simulateScraping(client *http.Client) {
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
 			fmt.Printf("Error %v\n", err)
-			continue
+			return
 		}
+		req.Header.Add("X-API-Key", "testKey123")
+
+		res, err := client.Do(req)
+		if err != nil {
+			fmt.Printf("request failed:  %v\n", err)
+			return
+		}
+		fmt.Printf("[SCRAPING] request 1 → 200 OK")
+		res.Body.Close()
 	}
 }
 
