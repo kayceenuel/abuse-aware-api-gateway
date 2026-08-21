@@ -45,11 +45,12 @@ func simulateScraping(client *http.Client) {
 		res.Body.Close()
 	}
 }
-
 func main() {
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	simulateCredentialStuffing(client)
-	simulateScraping(client)
-
+    client := &http.Client{Timeout: 10 * time.Second}
+    
+    fmt.Println("=== Simulating credential stuffing ===")
+    simulateCredentialStuffing(client)
+    
+    fmt.Println("\n=== Simulating scraping ===")
+    simulateScraping(client)
 }
