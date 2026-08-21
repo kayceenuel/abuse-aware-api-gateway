@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+// simulateCredentialStuffing sends 20 POST requests to /login with different
+// usernames from the same API key — mimicking a credential stuffing attack.
 func simulateCredentialStuffing(client *http.Client) {
 	for i := 1; i <= 20; i++ {
 		req, err := http.NewRequest("POST", "http://localhost:2121/login", nil)
@@ -13,6 +15,7 @@ func simulateCredentialStuffing(client *http.Client) {
 			fmt.Printf("request error: %v\n", err)
 			return
 		}
+		// attach the API key header — gateway rejects requests without it
 		req.Header.Set("X-API-Key", "testkey123")
 
 		res, err := client.Do(req)
@@ -22,10 +25,13 @@ func simulateCredentialStuffing(client *http.Client) {
 		}
 		fmt.Printf("[CREDENTIAL STUFFING] attempt %d — username: user%d → %s\n", i, i, res.Status)
 		res.Body.Close()
+		// small delay so gateway logs are readable during a live demo
 		time.Sleep(100 * time.Millisecond)
 	}
 }
 
+// simulateScraping sends 30 GET requests to /search in rapid succession —
+// mimicking a bot harvesting the product catalog.
 func simulateScraping(client *http.Client) {
 	for i := 1; i <= 30; i++ {
 		req, err := http.NewRequest(http.MethodGet, "http://localhost:2121/search", nil)
