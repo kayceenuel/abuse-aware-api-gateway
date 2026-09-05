@@ -10,6 +10,57 @@ import (
 
 var ctx = context.Background() // context allows you to manage deadlines and handle cancellations for requests.
 
+// The entire token-bucket operation runs atomically inside Redis.
+//
+// KEYS[1] = token count
+// KEYS[2] = last refill timestamp
+// 
+// ARGV[1] = bucket size
+// ARGV[2] = refill rate (tokens/second)
+// ARGV[3] = current Unix timestamp
+var tokenBucketScript = redis.NewScript(`
+local tokens = redis.call("GET", KEYS[1])
+local lastRefill = redis.call("GET", KEYS[2])
+
+local bucketSize = tonumber(ARGV[1])
+local refillRate = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+
+-- First request for this API key.
+if not tokens then
+	tokens = bucketSize
+	lastRefill = now
+end
+
+tokens = tonumber(tokens)
+lastRefill = tonumber(lastRefill)
+
+-- Refill the bucket based on elapsed time.
+local elapsed = now - lastRefill
+
+if elapsed > 0 then
+	local refilled = elapsed * refillRate
+	tokens = math.min(tokens + refilled, bucketSize)
+	lastRefill = now
+end
+
+-- Consume one token if available.
+if tokens > 0 then
+	tokens = tokens - 1
+
+	redis.call("SET", KEYS[1], tokens)
+	redis.call("SET", KEYS[2], lastRefill)
+
+	return 1
+end
+
+-- No tokens available.
+redis.call("SET", KEYS[1], tokens)
+redis.call("SET", KEYS[2], lastRefill)
+
+return 0
+`)
+
 type RateLimiter struct {
 	client *redis.Client
 
