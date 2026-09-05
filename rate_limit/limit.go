@@ -8,7 +8,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var ctx = context.Background() // context allows you to manage deadlines and handle cancellations for requests.
+var ctx = context.Background()
 
 // The entire token-bucket operation runs atomically inside Redis.
 //
@@ -26,7 +26,7 @@ local bucketSize = tonumber(ARGV[1])
 local refillRate = tonumber(ARGV[2])
 local now = tonumber(ARGV[3])
 
--- First request for this API key.
+-- First request: start with a full bucket.
 if not tokens then
 	tokens = bucketSize
 	lastRefill = now
@@ -35,7 +35,7 @@ end
 tokens = tonumber(tokens)
 lastRefill = tonumber(lastRefill)
 
--- Refill the bucket based on elapsed time.
+-- Refill only for time that has actually elapsed.
 local elapsed = now - lastRefill
 
 if elapsed > 0 then
@@ -64,19 +64,41 @@ return 0
 type RateLimiter struct {
 	client *redis.Client
 
-	// token bucket config
-	bucketSize int // maximum num of tokens in the bucket.
-	refillRate int // The number of tokens to add to the bucket per second.
-	// sliding window config
-	windowSize  time.Duration // The duration of the sliding window
+	// Token bucket configuration.
+	bucketSize int
+	refillRate int
+
+	// Sliding window configuration.
+	windowSize  time.Duration
 	maxRequests int
 }
 
-// NewRateLimiter creates a new RateLimiter configured instance
+// NewRateLimiter creates a new RateLimiter with the given configuration.
+func NewRateLimiter(
+	client *redis.Client,
+	bucketSize int,
+	refillRate int,
+	windowSize time.Duration,
+	maxRequests int,
+) *RateLimiter {
+	return &RateLimiter{
+		client:      client,
+		bucketSize:  bucketSize,
+		refillRate:  refillRate,
+		windowSize:  windowSize,
+		maxRequests: maxRequests,
+	}
+}
+
+// AllowTokenBucket checks whether a request is allowed by the token bucket.
+//
+// The entire operation is executed atomically inside Redis.
 func (rl *RateLimiter) AllowTokenBucket(apiKey string) (bool, error) {
 	tokensKey := "token_bucket:" + apiKey + ":tokens"
 	lastRefillKey := "token_bucket:" + apiKey + ":last_refill"
 
+	// Redis runs the script atomically, so concurrent requests
+	// cannot read the same token count and both consume it.
 	result, err := tokenBucketScript.Run(
 		ctx,
 		rl.client,
@@ -98,40 +120,51 @@ func min(a, b int) int {
 	if a < b {
 		return a
 	}
+
 	return b
 }
 
-// ALlowSlidingWindow checks if a request is allowed based on the sliding windows
+// AllowSlidingWindow checks if a request is allowed based on the sliding window.
 func (rl *RateLimiter) AllowSlidingWindow(ip string) (bool, error) {
 	slidingKey := "sliding_window:" + ip
-	now := time.Now().UnixMilli() // current time in miliseconds
+	now := time.Now().UnixMilli()
 
-	// Use a Redis transaction (MULTI/EXEC) for atomicity
-	// This ensures that all operations are treated as a sinlge, atomic unit.
+	// Use a Redis transaction to execute the cleanup and count together.
 	pipe := rl.client.TxPipeline()
 
-	// Remove timestamps older than the current window
-	// ZREMRANGEBYSCORE key - inf (now - windowSize)
-	pipe.ZRemRangeByScore(ctx, slidingKey, "-inf", fmt.Sprintf("%d", now-rl.windowSize.Milliseconds()))
+	// Remove timestamps older than the current window.
+	pipe.ZRemRangeByScore(
+		ctx,
+		slidingKey,
+		"-inf",
+		fmt.Sprintf("%d", now-rl.windowSize.Milliseconds()),
+	)
 
-	// Count BEFORE adding the new request
+	// Count requests currently inside the window.
 	countCmd := pipe.ZCard(ctx, slidingKey)
 
-	// Execute to get the count
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return false, err
 	}
 
-	// Check the limit before adding
+	// Check the limit before adding the new request.
 	if countCmd.Val() >= int64(rl.maxRequests) {
 		return false, nil
 	}
 
-	// Only add if allowed
-	rl.client.ZAdd(ctx, slidingKey, redis.Z{Score: float64(now), Member: now})
+	// Add the current request.
+	rl.client.ZAdd(
+		ctx,
+		slidingKey,
+		redis.Z{
+			Score:  float64(now),
+			Member: now,
+		},
+	)
+
+	// Keep the Redis key around slightly longer than the window.
 	rl.client.Expire(ctx, slidingKey, rl.windowSize*2)
 
 	return true, nil
-
 }
