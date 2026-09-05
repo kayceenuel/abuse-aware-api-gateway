@@ -14,7 +14,7 @@ var ctx = context.Background() // context allows you to manage deadlines and han
 //
 // KEYS[1] = token count
 // KEYS[2] = last refill timestamp
-// 
+//
 // ARGV[1] = bucket size
 // ARGV[2] = refill rate (tokens/second)
 // ARGV[3] = current Unix timestamp
@@ -73,51 +73,24 @@ type RateLimiter struct {
 }
 
 // NewRateLimiter creates a new RateLimiter configured instance
-func NewRateLimiter(client *redis.Client, bucketSize int, refillRate int, windowSize time.Duration, maxRequests int) *RateLimiter {
-	return &RateLimiter{
-		client:      client,
-		bucketSize:  bucketSize,
-		refillRate:  refillRate,
-		windowSize:  windowSize,
-		maxRequests: maxRequests,
-	}
-}
-
 func (rl *RateLimiter) AllowTokenBucket(apiKey string) (bool, error) {
 	tokensKey := "token_bucket:" + apiKey + ":tokens"
 	lastRefillKey := "token_bucket:" + apiKey + ":last_refill"
 
-	// Get current token count
-	tokens, err := rl.client.Get(ctx, tokensKey).Int()
-	if err == redis.Nil {
-		// new API key - start with a full bucket
-		tokens = rl.bucketSize
-		rl.client.Set(ctx, tokensKey, tokens, 0)
-		rl.client.Set(ctx, lastRefillKey, time.Now().Unix(), 0)
-	} else if err != nil {
-		return false, err
-	}
+	result, err := tokenBucketScript.Run(
+		ctx,
+		rl.client,
+		[]string{tokensKey, lastRefillKey},
+		rl.bucketSize,
+		rl.refillRate,
+		time.Now().Unix(),
+	).Int()
 
-	// calculate refill based on time elapsed since last refill
-	lastRefill, err := rl.client.Get(ctx, lastRefillKey).Int64() // int64 is used to store Unix timestamps
 	if err != nil {
 		return false, err
 	}
-	// calculate how many tokens to refill based on the elapsed time and refill rate
-	elapsed := time.Now().Unix() - lastRefill
-	refilled := int(elapsed) * rl.refillRate
-	if refilled > 0 {
-		tokens = min(tokens+refilled, rl.bucketSize)
-		rl.client.Set(ctx, tokensKey, tokens, 0)
-		rl.client.Set(ctx, lastRefillKey, time.Now().Unix(), 0)
-	}
 
-	// check if there are enough tokens to allow the request
-	if tokens > 0 {
-		rl.client.Decr(ctx, tokensKey) // decrement token count
-		return true, nil
-	}
-	return false, nil // not enough tokens, request is denied
+	return result == 1, nil
 }
 
 // min returns the smaller of two integers.
