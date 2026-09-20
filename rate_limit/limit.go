@@ -2,7 +2,8 @@ package rate_limit
 
 import (
 	"context"
-	"fmt"
+	"crypto/rand"
+	"encoding/hex"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -28,8 +29,8 @@ local now = tonumber(ARGV[3])
 
 -- First request: start with a full bucket.
 if not tokens then
-	tokens = bucketSize
-	lastRefill = now
+    tokens = bucketSize
+    lastRefill = now
 end
 
 tokens = tonumber(tokens)
@@ -39,19 +40,18 @@ lastRefill = tonumber(lastRefill)
 local elapsed = now - lastRefill
 
 if elapsed > 0 then
-	local refilled = elapsed * refillRate
-	tokens = math.min(tokens + refilled, bucketSize)
-	lastRefill = now
+    local refilled = elapsed * refillRate
+    tokens = math.min(tokens + refilled, bucketSize)
+    lastRefill = now
 end
 
 -- Consume one token if available.
 if tokens > 0 then
-	tokens = tokens - 1
+    tokens = tokens - 1
+    redis.call("SET", KEYS[1], tokens)
+    redis.call("SET", KEYS[2], lastRefill)
 
-	redis.call("SET", KEYS[1], tokens)
-	redis.call("SET", KEYS[2], lastRefill)
-
-	return 1
+    return 1
 end
 
 -- No tokens available.
@@ -60,6 +60,46 @@ redis.call("SET", KEYS[2], lastRefill)
 
 return 0
 `)
+
+// Lua script for sliding window rate limiting.
+//
+// KEYS[1] = Redis sorted-set key for this IP
+//
+// ARGV[1] = current timestamp in milliseconds
+// ARGV[2] = window size in milliseconds
+// ARGV[3] = maximum requests allowed in the window
+// ARGV[4] = unique request ID
+var slidingWindowScript = redis.NewScript(`
+-- Remove requests older than the current window.
+redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", ARGV[1] - ARGV[2])
+
+-- Count requests still inside the window.
+local count = redis.call("ZCARD", KEYS[1])
+
+-- Reject if the limit has already been reached.
+if count >= tonumber(ARGV[3]) then
+    return {0, count}
+end
+
+-- Add this request using its timestamp as the score
+-- and a unique ID as the member.
+redis.call("ZADD", KEYS[1], ARGV[1], ARGV[4])
+
+-- Keep the key around slightly longer than the window.
+redis.call("PEXPIRE", KEYS[1], ARGV[2] * 2)
+
+return {1, count + 1}
+`)
+
+func newRequestID() (string, error) {
+	b := make([]byte, 8)
+
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(b), nil
+}
 
 type RateLimiter struct {
 	client *redis.Client
@@ -115,56 +155,32 @@ func (rl *RateLimiter) AllowTokenBucket(apiKey string) (bool, error) {
 	return result == 1, nil
 }
 
-// min returns the smaller of two integers.
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-
-	return b
-}
-
 // AllowSlidingWindow checks if a request is allowed based on the sliding window.
 func (rl *RateLimiter) AllowSlidingWindow(ip string) (bool, error) {
 	slidingKey := "sliding_window:" + ip
 	now := time.Now().UnixMilli()
 
-	// Use a Redis transaction to execute the cleanup and count together.
-	pipe := rl.client.TxPipeline()
-
-	// Remove timestamps older than the current window.
-	pipe.ZRemRangeByScore(
-		ctx,
-		slidingKey,
-		"-inf",
-		fmt.Sprintf("%d", now-rl.windowSize.Milliseconds()),
-	)
-
-	// Count requests currently inside the window.
-	countCmd := pipe.ZCard(ctx, slidingKey)
-
-	_, err := pipe.Exec(ctx)
+	requestID, err := newRequestID()
 	if err != nil {
 		return false, err
 	}
 
-	// Check the limit before adding the new request.
-	if countCmd.Val() >= int64(rl.maxRequests) {
-		return false, nil
+	result, err := slidingWindowScript.Run(
+		ctx,
+		rl.client,
+		[]string{slidingKey},
+		now,
+		rl.windowSize.Milliseconds(),
+		rl.maxRequests,
+		requestID,
+	).Result()
+
+	if err != nil {
+		return false, err
 	}
 
-	// Add the current request.
-	rl.client.ZAdd(
-		ctx,
-		slidingKey,
-		redis.Z{
-			Score:  float64(now),
-			Member: now,
-		},
-	)
+	values := result.([]interface{})
+	allowed := values[0].(int64) == 1
 
-	// Keep the Redis key around slightly longer than the window.
-	rl.client.Expire(ctx, slidingKey, rl.windowSize*2)
-
-	return true, nil
+	return allowed, nil
 }
