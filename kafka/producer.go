@@ -14,10 +14,10 @@ import (
 type RequestEvent struct {
 	IPAddress string    `json:"ip_address"`
 	Endpoint  string    `json:"endpoint"`
-	APIKey    string    `json:"api_key"`
 	Timestamp time.Time `json:"timestamp"`
 	Allowed   bool      `json:"allowed"`
 	Username  string    `json:"username"`
+	Reason    string    `json:"reason"`
 }
 
 // NewProducer creates a Kafka writer connected to the given broker and topic.

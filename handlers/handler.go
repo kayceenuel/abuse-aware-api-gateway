@@ -52,7 +52,6 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 		kafka.Log(producer, kafka.RequestEvent{
 			IPAddress: ip,
 			Endpoint:  r.URL.Path,
-			APIKey:    apiKey,
 			Timestamp: time.Now(),
 			Allowed:   true,
 		})
@@ -62,52 +61,76 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 	}
 }
 
-func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafkago.Writer) http.HandlerFunc { // SearchHandler only accepts GET - Search queries should be in the URL, not in the body.
+func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafkago.Writer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract request information before making any decisions.
+		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		apiKey := r.Header.Get("X-API-Key")
+
+		event := kafka.RequestEvent{
+			IPAddress: ip,
+			Endpoint:  r.URL.Path,
+			Timestamp: time.Now(),
+		}
+
+		// Log the final decision when handler exits.
+		defer func() {
+			kafka.Log(producer, event)
+		}()
+
 		if r.Method != http.MethodGet {
+			event.Allowed = false
+			event.Reason = "invalid request method"
+
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 			return
 		}
-		//Extract the API key from the request header. If the API key is missing, return 401 Unauthorized.
-		// The API key is used to identify the client and apply rate limiting.
-		apiKey := r.Header.Get("X-API-Key")
+
 		if apiKey == "" {
-			http.Error(w, "Missing API key", http.StatusUnauthorized)
+			event.Allowed = false
+			event.Reason = "missing API Key"
+
+			http.Error(w, "Missing API Key", http.StatusUnauthorized)
 			return
 		}
-		// extract client IP
-		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 
-		// check token bucket - if not allowed, return, 429 Too Many Requests.
 		allowed, err := rl.AllowTokenBucket(apiKey)
 		if err != nil {
+			event.Allowed = false
+			event.Reason = "token bucket error"
+
 			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
 			return
 		}
+
 		if !allowed {
+			event.Allowed = false
+			event.Reason = "token bucket rate limit exceeded"
+
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
-		// Check sliding_window - if not allowed, return 429 Too Many Requests.
+
 		allowed, err = rl.AllowSlidingWindow(ip)
 		if err != nil {
+			event.Allowed = false
+			event.Reason = "sliding window error"
+
 			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
 			return
 		}
+
 		if !allowed {
+			event.Allowed = false
+			event.Reason = "sliding window rate limit exceeded"
+
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
-		// log the request event to Kafka
-		kafka.Log(producer, kafka.RequestEvent{
-			IPAddress: ip,
-			Endpoint:  r.URL.Path,
-			APIKey:    apiKey,
-			Timestamp: time.Now(),
-			Allowed:   true,
-		})
 
-		// forward request to the product API via proxy
+		event.Allowed = true
+		event.Reason = "request allowed"
+
 		proxy.ServeHTTP(w, r)
 	}
 }
@@ -153,12 +176,11 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *k
 		kafka.Log(producer, kafka.RequestEvent{
 			IPAddress: ip,
 			Endpoint:  r.URL.Path,
-			APIKey:    apiKey,
 			Timestamp: time.Now(),
 			Allowed:   true,
 		})
 		// forward request to the product API via proxy
 		proxy.ServeHTTP(w, r)
 	}
-	
+
 }
