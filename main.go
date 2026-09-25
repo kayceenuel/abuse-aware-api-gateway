@@ -18,7 +18,7 @@ func main() {
 	// create a rate limiter using NewRateLimiter
 	//Pass it to each handler func along proxyHandler
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379", // Redis server address
+		Addr: "127.0.0.1:6379", // Redis server address
 	})
 	defer redisClient.Close()
 
