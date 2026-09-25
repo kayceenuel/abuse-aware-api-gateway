@@ -43,6 +43,13 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 			return
 		}
 
+		if apiKey == "" {
+			event.Allowed = false
+			event.Reason = "missing API Key"
+			http.Error(w, "Missing API Key", http.StatusUnauthorized)
+			return
+		}
+
 		// Read the login body so we can extract the username.
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -64,13 +71,6 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 
 		// Restore the body because the proxy still needs to read it.
 		r.Body = io.NopCloser(bytes.NewReader(body))
-
-		if apiKey == "" {
-			event.Allowed = false
-			event.Reason = "missing API Key"
-			http.Error(w, "Missing API Key", http.StatusUnauthorized)
-			return
-		}
 
 		allowed, err := rl.AllowTokenBucket(apiKey)
 		if err != nil {
