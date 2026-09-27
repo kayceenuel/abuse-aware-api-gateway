@@ -10,6 +10,8 @@ import (
 
 var ctx = context.Background()
 
+const detectionWindow = 10 * time.Minute
+
 // RiskScorer detects abuse patterns and tightens limits for offending IPs.
 type RiskScorer struct {
 	client            *redis.Client // to read & write counters
@@ -36,6 +38,10 @@ func (rs *RiskScorer) Score(event RequestEvent) error {
 		if err := rs.client.SAdd(ctx, stuffingKey, event.Username).Err(); err != nil {
 			return fmt.Errorf("risk scorer: sadd failed: %w", err)
 		}
+		// Set an expiration for the stuffing key
+		if err := rs.client.Expire(ctx, stuffingKey, detectionWindow).Err(); err != nil {
+			return fmt.Errorf("risk scorer: expire stuffing key failed: %w", err)
+		}
 		count, err := rs.client.SCard(ctx, stuffingKey).Result()
 		if err != nil {
 			return fmt.Errorf("risk scorer: scard failed: %w", err)
@@ -50,6 +56,10 @@ func (rs *RiskScorer) Score(event RequestEvent) error {
 		count, err := rs.client.Incr(ctx, scrapingKey).Result()
 		if err != nil {
 			return fmt.Errorf("risk scorer: incr failed: %w", err)
+		}
+		// Set an expiration for the scraping key to avoid indefinite growth.
+		if err := rs.client.Expire(ctx, scrapingKey, detectionWindow).Err(); err != nil {
+			return fmt.Errorf("risk scorer: expire scraping key failed: %w", err)
 		}
 		if count > int64(rs.scrapingThreshold) {
 			rs.client.Set(ctx, "limit:"+event.IPAddress, 1, time.Hour)
