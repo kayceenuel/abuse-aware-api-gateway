@@ -10,59 +10,78 @@ import (
 
 var ctx = context.Background()
 
-const detectionWindow = 10 * time.Minute
+const (
+	detectionWindow          = 10 * time.Minute
+	credentialStuffingPoints = 2
+	scrapingPoints           = 1
+	riskThreshold            = 10
+)
 
-// RiskScorer detects abuse patterns and tightens limits for offending IPs.
+// RiskScorer detects abuse patterns and tightens Redis limits for risky IPs.
 type RiskScorer struct {
-	client            *redis.Client // to read & write counters
-	stuffingThreshold int           // uique usernames per IP before flagging credential stuffing
-	scrapingThreshold int           // search requests per IP before flagging scraping
+	client *redis.Client
 }
 
-// NewRiskScorer creates a RiskScorer with a given Redis client and thresholds.
-func NewRiskScorer(client *redis.Client, stuffingThreshold, scrapringThreshold int) *RiskScorer {
+// NewRiskScorer creates a RiskScorer with a Redis client.
+func NewRiskScorer(client *redis.Client) *RiskScorer {
 	return &RiskScorer{
-		client:            client,
-		stuffingThreshold: stuffingThreshold,
-		scrapingThreshold: scrapringThreshold,
+		client: client,
 	}
 }
 
-// Score analyses a request event and tightens Redis limits if abuse is detected.
+// Score analyses a request event and updates the risk score for its IP.
 func (rs *RiskScorer) Score(event RequestEvent) error {
 	stuffingKey := "stuffing:" + event.IPAddress
 	scrapingKey := "scraping:" + event.IPAddress
+	riskKey := "risk:" + event.IPAddress
 
-	// Credential stuffing — track unique usernames attempted from this IP.
+	var riskScore int64
+
+	// Credential stuffing — only a new username increases the risk score.
 	if event.Endpoint == "/login" {
-		if err := rs.client.SAdd(ctx, stuffingKey, event.Username).Err(); err != nil {
+		added, err := rs.client.SAdd(ctx, stuffingKey, event.Username).Result()
+		if err != nil {
 			return fmt.Errorf("risk scorer: sadd failed: %w", err)
 		}
-		// Set an expiration for the stuffing key
+
 		if err := rs.client.Expire(ctx, stuffingKey, detectionWindow).Err(); err != nil {
 			return fmt.Errorf("risk scorer: expire stuffing key failed: %w", err)
 		}
-		count, err := rs.client.SCard(ctx, stuffingKey).Result()
-		if err != nil {
-			return fmt.Errorf("risk scorer: scard failed: %w", err)
-		}
-		if count > int64(rs.stuffingThreshold) {
-			rs.client.Set(ctx, "limit:"+event.IPAddress, 1, time.Hour)
+
+		if added == 1 {
+			riskScore, err = rs.client.IncrBy(ctx, riskKey, credentialStuffingPoints).Result()
+			if err != nil {
+				return fmt.Errorf("risk scorer: increment risk score failed: %w", err)
+			}
 		}
 	}
 
-	// Scraping — track total search requests from this IP.
+	// Scraping — every search request increases the risk score.
 	if event.Endpoint == "/search" {
-		count, err := rs.client.Incr(ctx, scrapingKey).Result()
+		_, err := rs.client.Incr(ctx, scrapingKey).Result()
 		if err != nil {
 			return fmt.Errorf("risk scorer: incr failed: %w", err)
 		}
-		// Set an expiration for the scraping key to avoid indefinite growth.
+
 		if err := rs.client.Expire(ctx, scrapingKey, detectionWindow).Err(); err != nil {
 			return fmt.Errorf("risk scorer: expire scraping key failed: %w", err)
 		}
-		if count > int64(rs.scrapingThreshold) {
-			rs.client.Set(ctx, "limit:"+event.IPAddress, 1, time.Hour)
+
+		riskScore, err = rs.client.IncrBy(ctx, riskKey, scrapingPoints).Result()
+		if err != nil {
+			return fmt.Errorf("risk scorer: increment risk score failed: %w", err)
+		}
+	}
+
+	if riskScore > 0 {
+		if err := rs.client.Expire(ctx, riskKey, detectionWindow).Err(); err != nil {
+			return fmt.Errorf("risk scorer: expire risk key failed: %w", err)
+		}
+	}
+
+	if riskScore >= riskThreshold {
+		if err := rs.client.Set(ctx, "limit:"+event.IPAddress, 1, time.Hour).Err(); err != nil {
+			return fmt.Errorf("risk scorer: set limit failed: %w", err)
 		}
 	}
 

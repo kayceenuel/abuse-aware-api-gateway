@@ -31,7 +31,7 @@ func main() {
 	}
 
 	// create risk scorer
-	scorer := kafka.NewRiskScorer(redisClient, 10, 50)
+	scorer := kafka.NewRiskScorer(redisClient)
 
 	// create kafka producer
 	producer := kafka.NewProducer("localhost:9092", "gateway_events")
