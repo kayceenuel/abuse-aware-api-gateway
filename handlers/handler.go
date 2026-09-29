@@ -18,10 +18,7 @@ type loginRequest struct {
 }
 
 func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafkago.Writer) http.HandlerFunc {
-
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		// Extract request information before making any decisions.
 		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 		apiKey := r.Header.Get("X-API-Key")
 
@@ -31,7 +28,6 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 			Timestamp: time.Now(),
 		}
 
-		// Log the final decision when the handler exits.
 		defer func() {
 			kafka.Log(producer, event)
 		}()
@@ -50,7 +46,7 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 			return
 		}
 
-		// Read the login body so we can extract the username.
+		// Check if the IP is risky before applying rate limits.
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			event.Allowed = false
@@ -68,8 +64,6 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 		}
 
 		event.Username = login.Username
-
-		// Restore the body because the proxy still needs to read it.
 		r.Body = io.NopCloser(bytes.NewReader(body))
 
 		allowed, err := rl.AllowTokenBucket(apiKey)
@@ -111,7 +105,6 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 
 func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafkago.Writer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Extract request information before making any decisions.
 		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 		apiKey := r.Header.Get("X-API-Key")
 
@@ -121,7 +114,6 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 			Timestamp: time.Now(),
 		}
 
-		// Log the final decision when handler exits.
 		defer func() {
 			kafka.Log(producer, event)
 		}()
@@ -129,7 +121,6 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 		if r.Method != http.MethodGet {
 			event.Allowed = false
 			event.Reason = "invalid request method"
-
 			http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 			return
 		}
@@ -137,8 +128,23 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 		if apiKey == "" {
 			event.Allowed = false
 			event.Reason = "missing API Key"
-
 			http.Error(w, "Missing API Key", http.StatusUnauthorized)
+			return
+		}
+
+		// Check if the IP is risky before applying rate limits.
+		risky, err := rl.IsRisky(ip)
+		if err != nil {
+			event.Allowed = false
+			event.Reason = "risk check error"
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		if risky {
+			event.Allowed = false
+			event.Reason = "risk limit exceeded"
+			http.Error(w, "Risk limit exceeded", http.StatusTooManyRequests)
 			return
 		}
 
@@ -146,7 +152,6 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 		if err != nil {
 			event.Allowed = false
 			event.Reason = "token bucket error"
-
 			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
 			return
 		}
@@ -154,7 +159,6 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 		if !allowed {
 			event.Allowed = false
 			event.Reason = "token bucket rate limit exceeded"
-
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
@@ -163,7 +167,6 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 		if err != nil {
 			event.Allowed = false
 			event.Reason = "sliding window error"
-
 			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
 			return
 		}
@@ -171,7 +174,6 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 		if !allowed {
 			event.Allowed = false
 			event.Reason = "sliding window rate limit exceeded"
-
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
@@ -184,10 +186,7 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 }
 
 func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafkago.Writer) http.HandlerFunc {
-
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		// Extract request information before making any decisions.
 		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 		apiKey := r.Header.Get("X-API-Key")
 
@@ -199,7 +198,6 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *k
 			Reason:    "request not processed",
 		}
 
-		// Log the final decision when the handler exits.
 		defer func() {
 			kafka.Log(producer, event)
 		}()
@@ -215,6 +213,21 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *k
 			event.Allowed = false
 			event.Reason = "missing API Key"
 			http.Error(w, "Missing API Key", http.StatusUnauthorized)
+			return
+		}
+		// // Check if the IP is risky before applying rate limits.
+		risky, err := rl.IsRisky(ip)
+		if err != nil {
+			event.Allowed = false
+			event.Reason = "risk check error"
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		if risky {
+			event.Allowed = false
+			event.Reason = "risk limit exceeded"
+			http.Error(w, "Risk limit exceeded", http.StatusTooManyRequests)
 			return
 		}
 
