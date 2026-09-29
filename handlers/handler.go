@@ -47,6 +47,20 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 		}
 
 		// Check if the IP is risky before applying rate limits.
+		isRisky, err := rl.IsRisky(ip)
+		if err != nil {
+			event.Allowed = false
+			event.Reason = "failed to check IP risk"
+			http.Error(w, "Failed to check IP risk", http.StatusInternalServerError)
+			return
+		}
+		if isRisky {
+			event.Allowed = false
+			event.Reason = "IP is risky"
+			http.Error(w, "IP is risky", http.StatusForbidden)
+			return
+		}
+		
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			event.Allowed = false
