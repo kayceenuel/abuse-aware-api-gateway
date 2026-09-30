@@ -41,26 +41,27 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 
 		if apiKey == "" {
 			event.Allowed = false
-			event.Reason = "missing API Key"
-			http.Error(w, "Missing API Key", http.StatusUnauthorized)
+			event.Reason = "missing API key"
+			http.Error(w, "Missing API key", http.StatusUnauthorized)
 			return
 		}
 
 		// Check if the IP is risky before applying rate limits.
-		isRisky, err := rl.IsRisky(ip)
+		risky, err := rl.IsRisky(ip)
 		if err != nil {
 			event.Allowed = false
-			event.Reason = "failed to check IP risk"
-			http.Error(w, "Failed to check IP risk", http.StatusInternalServerError)
+			event.Reason = "risk check error"
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		if isRisky {
+
+		if risky {
 			event.Allowed = false
-			event.Reason = "IP is risky"
-			http.Error(w, "IP is risky", http.StatusForbidden)
+			event.Reason = "risk limit exceeded"
+			http.Error(w, "Request blocked due to detected abuse", http.StatusTooManyRequests)
 			return
 		}
-		
+
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			event.Allowed = false
@@ -84,7 +85,7 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 		if err != nil {
 			event.Allowed = false
 			event.Reason = "token bucket error"
-			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
@@ -99,7 +100,7 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 		if err != nil {
 			event.Allowed = false
 			event.Reason = "sliding window error"
-			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
@@ -141,8 +142,8 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 
 		if apiKey == "" {
 			event.Allowed = false
-			event.Reason = "missing API Key"
-			http.Error(w, "Missing API Key", http.StatusUnauthorized)
+			event.Reason = "missing API key"
+			http.Error(w, "Missing API key", http.StatusUnauthorized)
 			return
 		}
 
@@ -158,7 +159,7 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 		if risky {
 			event.Allowed = false
 			event.Reason = "risk limit exceeded"
-			http.Error(w, "Risk limit exceeded", http.StatusTooManyRequests)
+			http.Error(w, "Request blocked due to detected abuse", http.StatusTooManyRequests)
 			return
 		}
 
@@ -166,7 +167,7 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 		if err != nil {
 			event.Allowed = false
 			event.Reason = "token bucket error"
-			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
@@ -181,7 +182,7 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 		if err != nil {
 			event.Allowed = false
 			event.Reason = "sliding window error"
-			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
@@ -225,11 +226,12 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *k
 
 		if apiKey == "" {
 			event.Allowed = false
-			event.Reason = "missing API Key"
-			http.Error(w, "Missing API Key", http.StatusUnauthorized)
+			event.Reason = "missing API key"
+			http.Error(w, "Missing API key", http.StatusUnauthorized)
 			return
 		}
-		// // Check if the IP is risky before applying rate limits.
+
+		// Check if the IP is risky before applying rate limits.
 		risky, err := rl.IsRisky(ip)
 		if err != nil {
 			event.Allowed = false
@@ -241,7 +243,7 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *k
 		if risky {
 			event.Allowed = false
 			event.Reason = "risk limit exceeded"
-			http.Error(w, "Risk limit exceeded", http.StatusTooManyRequests)
+			http.Error(w, "Request blocked due to detected abuse", http.StatusTooManyRequests)
 			return
 		}
 
@@ -249,7 +251,7 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *k
 		if err != nil {
 			event.Allowed = false
 			event.Reason = "token bucket error"
-			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
@@ -264,7 +266,7 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *k
 		if err != nil {
 			event.Allowed = false
 			event.Reason = "sliding window error"
-			http.Error(w, "Rate limiter error", http.StatusInternalServerError)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
