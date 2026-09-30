@@ -5,17 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 )
 
-// simulateCredentialStuffing sends 20 POST requests to /login with different
-// usernames from the same API key, mimicking a credential stuffing attack.
+const gatewayURL = "http://localhost:2121"
+
+// simulateCredentialStuffing sends different usernames from the same API key
+// to simulate credential stuffing from one IP.
 func simulateCredentialStuffing(client *http.Client) {
+	var allowed, blocked int
+
+	fmt.Println("=== Credential stuffing ===")
+
 	for i := 1; i <= 20; i++ {
 		username := fmt.Sprintf("user%d", i)
 
-		// Send the username in the request so the gateway can track
-		// which accounts are being targeted.
 		loginBody := map[string]string{
 			"username": username,
 			"password": "testpassword",
@@ -29,7 +34,7 @@ func simulateCredentialStuffing(client *http.Client) {
 
 		req, err := http.NewRequest(
 			http.MethodPost,
-			"http://localhost:2121/login",
+			gatewayURL+"/login",
 			bytes.NewReader(body),
 		)
 		if err != nil {
@@ -46,27 +51,33 @@ func simulateCredentialStuffing(client *http.Client) {
 			return
 		}
 
-		fmt.Printf(
-			"[CREDENTIAL STUFFING] attempt %d — username: %s → %s\n",
-			i,
-			username,
-			res.Status,
-		)
+		fmt.Printf("attempt %d — %s → %s\n", i, username, res.Status)
+
+		if res.StatusCode >= 200 && res.StatusCode < 300 {
+			allowed++
+		} else {
+			blocked++
+		}
 
 		res.Body.Close()
-
-		// Small delay so gateway events are easier to follow during a live demo.
+		// Small delay keeps the replay output readable during a live demo.
 		time.Sleep(100 * time.Millisecond)
 	}
+
+	fmt.Printf("Summary: %d allowed, %d blocked\n\n", allowed, blocked)
 }
 
-// simulateScraping sends 30 GET requests to /search in rapid succession,
-// mimicking a bot harvesting the product catalog.
+// simulateScraping sends repeated search requests from the same IP
+// to simulate automated scraping.
 func simulateScraping(client *http.Client) {
+	var allowed, blocked int
+
+	fmt.Println("=== Scraping ===")
+
 	for i := 1; i <= 30; i++ {
 		req, err := http.NewRequest(
 			http.MethodGet,
-			"http://localhost:2121/search",
+			gatewayURL+"/search",
 			nil,
 		)
 		if err != nil {
@@ -82,20 +93,42 @@ func simulateScraping(client *http.Client) {
 			return
 		}
 
-		fmt.Printf("[SCRAPING] request %d → %s\n", i, res.Status)
+		fmt.Printf("request %d → %s\n", i, res.Status)
+
+		if res.StatusCode >= 200 && res.StatusCode < 300 {
+			allowed++
+		} else {
+			blocked++
+		}
 
 		res.Body.Close()
-
+		// Small delay keeps the replay output readable during a live demo.
 		time.Sleep(100 * time.Millisecond)
 	}
+
+	fmt.Printf("Summary: %d allowed, %d blocked\n\n", allowed, blocked)
 }
 
+// Run the selected abuse scenario; default to both.
 func main() {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
 
-	fmt.Println("=== Simulating credential stuffing ===")
-	simulateCredentialStuffing(client)
+	mode := "all"
+	if len(os.Args) > 1 {
+		mode = os.Args[1]
+	}
 
-	fmt.Println("\n=== Simulating scraping ===")
-	simulateScraping(client)
+	switch mode {
+	case "stuffing":
+		simulateCredentialStuffing(client)
+	case "scraping":
+		simulateScraping(client)
+	case "all":
+		simulateCredentialStuffing(client)
+		simulateScraping(client)
+	default:
+		fmt.Println("Usage: go run ./scripts/replay.go [stuffing|scraping|all]")
+	}
 }
