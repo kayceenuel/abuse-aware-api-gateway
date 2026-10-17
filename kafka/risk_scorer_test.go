@@ -27,6 +27,9 @@ func newTestScorer(t *testing.T) (*RiskScorer, *redis.Client) {
 // distinctUsernamesToThreshold is how many unique logins reach the risk threshold.
 const distinctUsernamesToThreshold = riskThreshold / credentialStuffingPoints
 
+// searchesToThreshold is how many scrape requests reach the risk threshold.
+const searchesToThreshold = riskThreshold / scrapingPoints
+
 func TestRiskScorerDistinctUsernamesRaiseScoreAndTriggerThreshold(t *testing.T) {
 	scorer, client := newTestScorer(t)
 
@@ -89,5 +92,43 @@ func TestRiskScorerRepeatedUsernameDoesNotRaiseScore(t *testing.T) {
 
 	if want := int64(credentialStuffingPoints); score != want {
 		t.Fatalf("repeated username changed the score: got %d, want %d", score, want)
+	}
+}
+
+// TestRiskScorerScrapingAccumulatesScoreAndTriggersThreshold covers the scraping
+// path: each /search event adds scrapingPoints until the threshold trips the limit.
+func TestRiskScorerScrapingAccumulatesScoreAndTriggersThreshold(t *testing.T) {
+	scorer, client := newTestScorer(t)
+
+	ip := "203.0.113.12"
+	riskKey := "risk:" + ip
+	limitKey := "limit:" + ip
+
+	for i := 1; i <= searchesToThreshold; i++ {
+		if err := scorer.Score(RequestEvent{IPAddress: ip, Endpoint: "/search"}); err != nil {
+			t.Fatalf("score search %d: %v", i, err)
+		}
+
+		score, err := client.Get(ctx, riskKey).Int64()
+		if err != nil {
+			t.Fatalf("read risk score after %d searches: %v", i, err)
+		}
+
+		want := int64(i * scrapingPoints)
+		if score != want {
+			t.Fatalf("risk score after %d searches: got %d, want %d", i, score, want)
+		}
+
+		exists, err := client.Exists(ctx, limitKey).Result()
+		if err != nil {
+			t.Fatalf("check limit key after %d searches: %v", i, err)
+		}
+
+		if i < searchesToThreshold && exists != 0 {
+			t.Fatalf("limit key set too early, after only %d searches", i)
+		}
+		if i == searchesToThreshold && exists == 0 {
+			t.Fatal("limit key not set after reaching the risk threshold")
+		}
 	}
 }
