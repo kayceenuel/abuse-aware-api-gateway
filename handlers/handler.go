@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"time"
@@ -29,7 +30,9 @@ func LoginHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kafk
 		}
 
 		defer func() {
-			kafka.Log(producer, event)
+			if err := kafka.Log(producer, event); err != nil {
+				log.Printf("handlers: failed to publish request event: %v", err)
+			}
 		}()
 
 		if r.Method != http.MethodPost {
@@ -130,7 +133,9 @@ func SearchHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *kaf
 		}
 
 		defer func() {
-			kafka.Log(producer, event)
+			if err := kafka.Log(producer, event); err != nil {
+				log.Printf("handlers: failed to publish request event: %v", err)
+			}
 		}()
 
 		if r.Method != http.MethodGet {
@@ -214,7 +219,9 @@ func PurchaseHandler(proxy http.Handler, rl *rate_limit.RateLimiter, producer *k
 		}
 
 		defer func() {
-			kafka.Log(producer, event)
+			if err := kafka.Log(producer, event); err != nil {
+				log.Printf("handlers: failed to publish request event: %v", err)
+			}
 		}()
 
 		if r.Method != http.MethodPost {
