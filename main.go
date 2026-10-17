@@ -23,7 +23,15 @@ func main() {
 	defer redisClient.Close()
 
 	// create a rate limiter using NewRateLimiter
-	rateLimiter := rate_limit.NewRateLimiter(redisClient, 10, 1, time.Minute, 5)
+	//
+	// bucketSize=10, refillRate=1 (token bucket, per API key)
+	// windowSize=1 minute, maxRequests=30 (sliding window, per IP)
+	//
+	// The sliding-window cap is deliberately well above the risk thresholds
+	// (credential stuffing trips at 5 distinct logins, scraping at 10 searches)
+	// so the behavioral layer — not the coarse per-IP rate cap — is what flags
+	// abusive patterns.
+	rateLimiter := rate_limit.NewRateLimiter(redisClient, 10, 1, time.Minute, 30)
 
 	proxyHandler, err := proxy.NewHandler("http://localhost:8080")
 	if err != nil {
