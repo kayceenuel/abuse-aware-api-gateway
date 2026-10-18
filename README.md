@@ -102,7 +102,7 @@ The diagram shows both paths: the synchronous request path (client → gateway c
    go run .
    ```
 
-> No Docker? Run Redis locally (`redis-server`, or on Windows use WSL/Memurai) and point Kafka at a broker you already have. The gateway expects Redis at `127.0.0.1:6379` and Kafka at `localhost:9092`.
+> No Docker? Run Redis locally (`redis-server`, or on Windows use WSL/Memurai) and point Kafka at a broker you already have. The gateway expects Redis at `127.0.0.1:6379` and Kafka at `127.0.0.1:9092` (use the IPv4 address, not `localhost` — on Windows `localhost` can resolve to IPv6 `::1`, which the broker does not listen on).
 
 ## Demonstrating abuse detection
 

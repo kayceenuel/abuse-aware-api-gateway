@@ -42,11 +42,11 @@ func main() {
 	scorer := kafka.NewRiskScorer(redisClient)
 
 	// create kafka producer
-	producer := kafka.NewProducer("localhost:9092", "gateway_events")
+	producer := kafka.NewProducer("127.0.0.1:9092", "gateway_events")
 	defer producer.Close()
 
 	// start consumer in background
-	go kafka.Start("localhost:9092", "gateway_events", scorer)
+	go kafka.Start("127.0.0.1:9092", "gateway_events", scorer)
 	// handle the routes: /login, /search, /purchase
 	http.Handle("/login", handlers.LoginHandler(proxyHandler, rateLimiter, producer))
 	http.Handle("/search", handlers.SearchHandler(proxyHandler, rateLimiter, producer))
