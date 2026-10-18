@@ -127,14 +127,19 @@ where noted, a manual smoke test against a live Redis:
 - **Live smoke test** — with Redis running and Kafka down, valid logins were
   proxied and, after setting `limit:<ip>` manually, the next request was blocked
   with `Request blocked due to detected abuse`.
+- **Full round trip** — an opt-in integration test
+  (`integration/kafka_e2e_test.go`, guarded by `//go:build integration`) runs
+  against real Kafka and Redis: a burst of distinct logins is published, consumed
+  and scored, and the next request from that IP is blocked with 429. It is excluded
+  from `go test ./...` and run explicitly with
+  `go test -tags integration ./integration/...` after `docker compose up -d`.
 
 ## Known limitations
 
-- **The full Kafka round-trip is not covered by an automated test.** Kafka is an
-  external dependency and is not available in every environment (this one
-  included). The producer and consumer code are exercised indirectly, but the
-  end-to-end "event → Kafka → scorer → flag → block" path is verified by design
-  and by the scorer/limiter tests, not by an integration test.
+- **The full Kafka round-trip test needs live infrastructure.** It is covered by
+  the opt-in integration test above, but that test requires a running Kafka broker
+  and Redis (e.g. via `docker compose up -d`) and skips itself when either is
+  unreachable; it does not run as part of the default hermetic suite.
 - **Kafka is required for detection.** If the broker is down, events are not
   published and risk scoring stops. The handler now logs publish failures instead
   of ignoring them, but it does not block traffic while Kafka is unavailable.

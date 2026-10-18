@@ -226,6 +226,21 @@ go build ./...
 
 The abuse-detection tests are **hermetic**: they use [`miniredis`](https://github.com/alicebob/miniredis) (an in-process Redis) and fail-fast Kafka writers, so **no Redis, Kafka, or network is required** to run `go test ./...`.
 
+### Integration test (real Kafka + Redis)
+
+The full asynchronous round trip — request event → **Kafka** → consumer → risk scorer → Redis `limit:<ip>` → subsequent request returns **429** — is covered by an opt-in test guarded by the `integration` build tag, so it never runs (or needs a broker) during the hermetic suite above.
+
+It needs a **live Kafka broker and Redis**. The easiest way to get both is the project's Compose file:
+
+```bash
+docker compose up -d
+# wait for the kafka service to report healthy, then:
+go test -tags integration ./integration/... -run TestKafkaToBlockingRoundTrip -v -count=1 -timeout 120s
+```
+
+The test connects to `127.0.0.1:9092` and `127.0.0.1:6379` by default; override with `KAFKA_BROKER` and `REDIS_ADDR`. It isolates each run on its own topic, IP, and API key, polls the flag with a bounded 30s timeout, and **skips** (rather than fails) if Kafka or Redis is unreachable. Use `127.0.0.1` rather than `localhost` on Windows — `localhost` may resolve to IPv6 `::1`, which the broker does not listen on.
+
+
 ---
 
 ## Known limitations
